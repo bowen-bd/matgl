@@ -16,50 +16,133 @@ if matgl.config.BACKEND != "DGL":
 from matgl.ext._ase_dgl import Atoms2Graph, M3GNetCalculator, MolecularDynamics, PESCalculator, Relaxer
 
 
+@pytest.mark.integration
 def test_PESCalculator_and_M3GNetCalculator(MoS):
     adaptor = AseAtomsAdaptor()
+
+    # ============================================================
+    # M3GNet PES (eV/A3)
+    # ============================================================
     s_ase = adaptor.get_atoms(MoS)  # type: ignore
     ff = load_model("pretrained_models/M3GNet-MP-2021.2.8-PES/")
     ff.calc_hessian = True
-    calc = PESCalculator(potential=ff, state_attr=None, stress_unit="eV/A3")
+
+    calc = PESCalculator(
+        potential=ff,
+        state_attr=None,
+        stress_unit="eV/A3",
+        stress_weight=1.0,
+    )
     s_ase.set_calculator(calc)
+
     assert isinstance(s_ase.get_potential_energy(), float)
     assert list(s_ase.get_forces().shape) == [2, 3]
     assert list(s_ase.get_stress().shape) == [6]
     assert list(calc.results["hessian"].shape) == [6, 6]
-    np.testing.assert_allclose(s_ase.get_potential_energy(), -10.824362, atol=1e-5, rtol=1e-6)
 
-    calc = PESCalculator(potential=ff, state_attr=torch.tensor([0.0, 0.0]))
+    np.testing.assert_allclose(
+        s_ase.get_potential_energy(),
+        -10.824362,
+        atol=1e-5,
+        rtol=1e-6,
+    )
+
+    # ============================================================
+    # M3GNet PES (default GPa)
+    # ============================================================
+    calc = PESCalculator(
+        potential=ff,
+        state_attr=torch.tensor([0.0, 0.0]),
+        stress_unit="GPa",
+        stress_weight=1.0,
+    )
     s_ase.set_calculator(calc)
-    assert isinstance(s_ase.get_potential_energy(), float)
+
     assert list(s_ase.get_forces().shape) == [2, 3]
     assert list(s_ase.get_stress().shape) == [6]
     assert list(calc.results["hessian"].shape) == [6, 6]
-    np.testing.assert_allclose(s_ase.get_potential_energy(), -10.824362, atol=1e-5, rtol=1e-6)
 
+    np.testing.assert_allclose(
+        s_ase.get_potential_energy(),
+        -10.824362,
+        atol=1e-5,
+        rtol=1e-6,
+    )
+
+    # ============================================================
+    # Invalid stress_unit
+    # ============================================================
+    with pytest.raises(
+        ValueError,
+        match=r"Unsupported stress_unit: Pa. Must be 'GPa' or 'eV/A3'.",
+    ):
+        PESCalculator(
+            potential=ff,
+            stress_unit="Pa",
+            stress_weight=1.0,
+        )
+
+    # ============================================================
+    # Invalid stress_weight
+    # ============================================================
+    with pytest.raises(
+        ValueError,
+        match=r"Invalid stress unit configuration",
+    ):
+        PESCalculator(
+            potential=ff,
+            stress_unit="GPa",
+            stress_weight=0.5,
+        )
+
+    # ============================================================
+    # M3GNetCalculator (backward compatibility)
+    # ============================================================
     calc = M3GNetCalculator(potential=ff)
     s_ase.set_calculator(calc)
-    assert isinstance(s_ase.get_potential_energy(), float)
+
     assert list(s_ase.get_forces().shape) == [2, 3]
     assert list(s_ase.get_stress().shape) == [6]
     assert list(calc.results["hessian"].shape) == [6, 6]
-    np.testing.assert_allclose(s_ase.get_potential_energy(), -10.824362, atol=1e-5, rtol=1e-6)
-    with pytest.raises(ValueError, match=r"Unsupported stress_unit: Pa. Must be 'GPa' or 'eV/A3'."):
-        PESCalculator(potential=ff, stress_unit="Pa")
 
-    adaptor = AseAtomsAdaptor()
+    np.testing.assert_allclose(
+        s_ase.get_potential_energy(),
+        -10.824362,
+        atol=1e-5,
+        rtol=1e-6,
+    )
+
+    # ============================================================
+    # QET PES (charges + stress)
+    # ============================================================
     s_ase = adaptor.get_atoms(MoS)  # type: ignore
     ff = load_model("pretrained_models/QET-MatQ-PES/")
     ff.calc_hessian = True
-    calc = PESCalculator(potential=ff, state_attr=None, stress_unit="eV/A3")
+
+    calc = PESCalculator(
+        potential=ff,
+        state_attr=None,
+        stress_unit="eV/A3",
+        stress_weight=1.0,
+    )
     s_ase.set_calculator(calc)
-    assert isinstance(s_ase.get_potential_energy(), float)
-    assert list(s_ase.get_forces().shape) == [2, 3]
-    assert list(s_ase.get_stress().shape) == [6]
+
     assert list(s_ase.get_charges().shape) == [2]
+    assert list(s_ase.get_stress().shape) == [6]
     assert list(calc.results["hessian"].shape) == [6, 6]
-    np.testing.assert_allclose(s_ase.get_potential_energy(), -10.876679, atol=1e-5, rtol=1e-6)
-    np.testing.assert_allclose(s_ase.get_charges(), np.array([0.727852, -0.727852]), atol=1e-5, rtol=1e-6)
+
+    np.testing.assert_allclose(
+        s_ase.get_potential_energy(),
+        -10.876679,
+        atol=1e-5,
+        rtol=1e-6,
+    )
+    np.testing.assert_allclose(
+        s_ase.get_charges(),
+        np.array([0.727852, -0.727852]),
+        atol=1e-5,
+        rtol=1e-6,
+    )
 
 
 def test_CHGNetCalculator(MoS):

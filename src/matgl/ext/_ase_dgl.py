@@ -5,8 +5,11 @@ from __future__ import annotations
 import collections
 import contextlib
 import io
+import logging
+import math
 import pickle
 import sys
+import warnings
 from enum import Enum
 from typing import TYPE_CHECKING, Literal
 
@@ -42,6 +45,8 @@ if TYPE_CHECKING:
     from ase.optimize.optimize import Optimizer
 
     from matgl.apps._pes_dgl import Potential
+
+logger = logging.getLogger(__name__)
 
 
 class OPTIMIZERS(Enum):
@@ -149,7 +154,7 @@ class PESCalculator(Calculator):
             potential (Potential): matgl.apps.pes.Potential
             state_attr (tensor): State attribute
             compute_stress (bool): whether to calculate the stress
-            stress_unit (str): stress unit. Default: "GPa"
+            stress_unit (str): stress unit either in "GPa" or "eV/A^3". Default: "GPa"
             stress_weight (float): conversion factor from GPa to eV/A^3, if it is set to 1.0, the unit is in GPa
             use_voigt (bool): whether the voigt notation is used for stress output
             ext_pot (tensor): external potential applied to atoms (Natoms,)
@@ -185,7 +190,23 @@ class PESCalculator(Calculator):
         else:
             raise ValueError(f"Unsupported stress_unit: {stress_unit}. Must be 'GPa' or 'eV/A3'.")
 
-        self.stress_weight = stress_weight * conversion_factor
+        self.conversion_factor = conversion_factor * stress_weight
+        if self.conversion_factor == 1.0:
+            logger.warning(
+                "The stress unit is now in GPa. Please set stress_unit='eV/A3' "
+                "if you want to use PESCalculator for other ASE applications."
+            )
+        elif math.isclose(
+            self.conversion_factor, units.GPa / (units.eV / units.Angstrom**3), rel_tol=1e-4, abs_tol=1e-6
+        ):
+            logger.info("The stress unit is now in eV/A^3, which is the correct unit for an ASE Calculator.")
+        else:
+            raise ValueError(
+                "Error: Invalid stress unit configuration: stress_weight corresponds to neither "
+                "GPa nor eV/A^3. This is likely caused by setting both stress_unit and "
+                "stress_weight. Please set stress_unit to 'GPa' or 'eV/A3' and "
+                "stress_weight to 1.0."
+            )
         self.state_attr = state_attr
         self.element_types = potential.model.element_types  # type: ignore
         self.cutoff = potential.model.cutoff
@@ -239,7 +260,7 @@ class PESCalculator(Calculator):
                 if self.use_voigt
                 else calc_result[2].detach().cpu().numpy()
             )
-            self.results.update(stress=stresses_np * self.stress_weight)
+            self.results.update(stress=stresses_np * self.conversion_factor)
         if self.compute_hessian:
             self.results.update(hessian=calc_result[3].detach().cpu().numpy())
         if self.compute_magmom:
@@ -281,7 +302,7 @@ class Relaxer:
         state_attr: torch.Tensor | None = None,
         optimizer: Optimizer | str = "FIRE",
         relax_cell: bool = True,
-        stress_weight: float = 1 / 160.21766208,
+        **kwargs,
     ):
         """
         Args:
@@ -291,13 +312,23 @@ class Relaxer:
             optimizer (str or ase Optimizer): the optimization algorithm.
             Defaults to "FIRE"
             relax_cell (bool): whether to relax the lattice cell
-            stress_weight (float): conversion factor from GPa to eV/A^3.
+            **kwargs: Kwargs pass through to super().__init__().
         """
+        # Detect user-provided stress_weight
+        if "stress_weight" in kwargs:
+            warnings.warn(
+                "Relaxer does not support user-defined stress_weight. "
+                "The stress unit is fixed to 'eV/A3' for ASE compatibility, "
+                "and the provided stress_weight will be ignored.",
+                UserWarning,
+                stacklevel=2,
+            )
+            kwargs.pop("stress_weight")
         self.optimizer: Optimizer = OPTIMIZERS[optimizer.lower()].value if isinstance(optimizer, str) else optimizer
         self.calculator = PESCalculator(
             potential=potential,
             state_attr=state_attr,
-            stress_weight=stress_weight,  # type: ignore
+            stress_unit="eV/A3",
         )
         self.relax_cell = relax_cell
         self.ase_adaptor = AseAtomsAdaptor()
@@ -439,7 +470,6 @@ class MolecularDynamics:
         atoms: Atoms,
         potential: Potential,
         state_attr: torch.Tensor | None = None,
-        stress_weight: float = 1.0,
         ensemble: Literal[
             "nve",
             "nvt",
@@ -468,6 +498,7 @@ class MolecularDynamics:
         loginterval: int = 1,
         append_trajectory: bool = False,
         mask: tuple | np.ndarray | None = None,
+        **kwargs,
     ):
         """
         Init the MD simulation.
@@ -477,7 +508,6 @@ class MolecularDynamics:
             potential (Potential): potential for calculating the energy, force,
             stress of the atoms
             state_attr (torch.Tensor): State attr.
-            stress_weight (float): conversion factor from GPa to eV/A^3
             ensemble (str): choose from "nve", "nvt", "nvt_langevin", "nvt_andersen", "nvt_bussi",
             "npt", "npt_berendsen", "npt_nose_hoover"
             temperature (float): temperature for MD simulation, in K
@@ -498,13 +528,22 @@ class MolecularDynamics:
             append_trajectory (bool): Whether to append to prev trajectory.
             mask (np.array): either a tuple of 3 numbers (0 or 1) or a symmetric 3x3 array indicating,
                 which strain values may change for NPT simulations.
+            **kwargs: Kwargs pass-through to molecular dynamics.
         """
+        # Detect user-provided stress_weight
+        if "stress_weight" in kwargs:
+            warnings.warn(
+                "Relaxer does not support user-defined stress_weight. "
+                "The stress unit is fixed to 'eV/A3' for ASE compatibility, "
+                "and the provided stress_weight will be ignored.",
+                UserWarning,
+                stacklevel=2,
+            )
+            kwargs.pop("stress_weight")
         if isinstance(atoms, Structure | Molecule):
             atoms = AseAtomsAdaptor().get_atoms(atoms)
         self.atoms = atoms
-        self.atoms.set_calculator(
-            PESCalculator(potential=potential, state_attr=state_attr, stress_unit="eV/A3", stress_weight=stress_weight)
-        )
+        self.atoms.set_calculator(PESCalculator(potential=potential, state_attr=state_attr, stress_unit="eV/A3"))
 
         if taut is None:
             taut = 100 * timestep * units.fs
