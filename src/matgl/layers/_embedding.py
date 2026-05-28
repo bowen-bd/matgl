@@ -103,7 +103,7 @@ class EmbeddingBlock(nn.Module):
             edge_feat = edge_attr
         if self.include_state is True:
             if self.ntypes_state and self.dim_state_embedding is not None:
-                state_feat = self.layer_state_embedding(state_attr)
+                state_feat = self.layer_state_embedding(state_attr.long())
             elif self.dim_state_feats is not None:
                 state_attr = torch.unsqueeze(state_attr, 0)
                 state_feat = self.layer_state_embedding(state_attr.to(matgl.float_th))
