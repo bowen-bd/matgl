@@ -10,10 +10,10 @@ nav_order: 3
 - **New: Release of compact ~1M parameter CHGNet MatPES models.** Released lightweight (1,083,842 parameter)
   CHGNet foundation potentials for both PBE (`BowenD-UCB/CHGNet-PES-MatPES-PBE-1M-2026.9`) and r2SCAN
   (`BowenD-UCB/CHGNet-PES-MatPES-r2SCAN-1M-2026.9`) trained on the official MatPES dataset (`2024.11` / `2025.2`). Despite having
-  ~2.5× fewer parameters than the 2.7M baseline, these compact models achieve superior validation and test MAE across
-  energy (test: 22.99 meV/atom PBE vs 28.09 meV/atom; 25.18 meV/atom r2SCAN vs 26.93 meV/atom; val: 25.60 meV/atom PBE; 28.00 meV/atom r2SCAN),
-  forces (test: 87.35 meV/Å PBE vs 117.36 meV/Å; 114.98 meV/Å r2SCAN vs 145.27 meV/Å; val: 111.00 meV/Å PBE; 141.18 meV/Å r2SCAN),
-  and stresses (test: 0.4963 GPa PBE vs 0.6066 GPa; 0.6441 GPa r2SCAN vs 0.6910 GPa; val: 0.6060 GPa PBE; 0.7187 GPa r2SCAN).
+  ~2.5× fewer parameters than the standard 2.7M architecture, these compact models achieve strong validation and test MAE across
+  energy (test: 22.99 meV/atom PBE, 25.18 meV/atom r2SCAN; val: 25.60 meV/atom PBE, 28.00 meV/atom r2SCAN),
+  forces (test: 87.35 meV/Å PBE, 114.98 meV/Å r2SCAN; val: 111.00 meV/Å PBE, 141.18 meV/Å r2SCAN),
+  and stresses (test: 0.4963 GPa PBE, 0.6441 GPa r2SCAN; val: 0.6060 GPa PBE, 0.7187 GPa r2SCAN).
 - **Fix: CHGNet three-body geometry autograd detachment (#834).** Continuous line-graph geometry features
   (`lg_bond_vec` and `lg_bond_dist`) were previously sliced under `torch.no_grad()`, causing three-body angular
   contributions to forces and stresses to be detached from autograd. Discrete graph topology is now isolated
