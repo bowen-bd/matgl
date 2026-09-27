@@ -17,6 +17,11 @@ nav_order: 3
   (`lg_bond_vec` and `lg_bond_dist`) were previously sliced under `torch.no_grad()`, causing three-body angular
   contributions to forces and stresses to be detached from autograd. Discrete graph topology is now isolated
   in `torch.no_grad()` while coordinate slicing preserves gradient tracking (@wakamiya0315, @bowen-bd).
+- **Fix: Line-graph periodic self-image supercell invariance (#839).** Periodic self-image bonds meeting
+  at a central atom in small unit cells were previously filtered and signed inconsistently in the line graph,
+  causing a discrepancy between unit cell and supercell representations. Simplified edge connection logic
+  and consistent bond vector inversion ensure exact supercell invariance across all cell dimensions. Updated
+  the published 1M CHGNet PBE and r2SCAN models on Hugging Face Hub with the fix.
 - **Fix: Multi-GPU DDP training metric device mismatch and cache race condition.** Fixed an issue where dummy
   metric tensors in `PotentialLightningModule.loss_fn` were constructed on CPU, causing NCCL `sync_dist=True` to
   crash, and guarded dataset cache directory cleanup in `MGLDataset` against multi-rank race conditions.
