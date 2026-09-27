@@ -7,6 +7,27 @@ nav_order: 3
 # Change Log
 
 ## 4.0.4
+- **Disk-backed PyG training for datasets larger than memory.** `write_mgl_shards` streams records into versioned,
+  transactional CPU shards; `MGLDiskDataset` loads one shard per worker on demand; and `ShardBatchSampler` keeps
+  batches shard-local while assigning disjoint shards and equal step counts to distributed ranks. `MGLDataLoader`
+  now selects this path automatically for disk datasets without changing its existing in-memory behavior.
+  `MGLDataModule` provides Lightning fit/validate/test/predict loaders with deterministic epoch shuffling,
+  multiworker support, automatic MatGL collation, and optional on-the-fly graph conversion. Rebuild failures retain
+  the prior committed manifest and clean up incomplete shards, while successful rebuilds remove superseded shards.
+  A runnable QET notebook demonstrates sharded dataset creation, Lightning training, and per-graph QEq charge
+  conservation.
+- **Improved PyG command-line workflows.** `mgl train` now trains or fine-tunes interatomic potentials from local
+  MatPES-shaped JSON/JSONL or Extended XYZ data through `MGLDatasetLoader` and `MGLPotentialTrainer`; `mgl evaluate`
+  evaluates a saved potential with force/stress autograd enabled. Extended XYZ input supports periodic structures
+  and nonperiodic molecules, standard or user-selected label keys, and TensorNet scratch training. The JSON loader
+  accepts both current record-oriented MatPES files and the aggregate `structures`/`outputs` shape used by the
+  earlier CLI prototype. Multi-frame Extended XYZ input is also supported by `mgl predict`, `mgl relax`, and
+  `mgl md`, with per-frame predictions, trajectory-preserving relaxation output, and one MD run per frame.
+  The training and evaluation commands support
+  Lightning accelerator/device selection, optional charge or magnetic-moment targets, dataset caching, and explicit
+  stress units. Relaxation now exposes the
+  ASE optimizer, cell-relaxation toggle, force threshold, and step limit. Model arguments accept local save paths,
+  parser construction no longer queries the model registry, and MD boolean/mask arguments use unambiguous parsers.
 - **New: Release of compact ~1M parameter CHGNet MatPES models.** Released lightweight (1,083,842 parameter)
   CHGNet foundation potentials for both PBE (`BowenD-UCB/CHGNet-PES-MatPES-PBE-1M-2026.9`) and r2SCAN
   (`BowenD-UCB/CHGNet-PES-MatPES-r2SCAN-1M-2026.9`) trained on the official MatPES dataset (`2024.11` / `2025.2`). Despite having
@@ -14,6 +35,22 @@ nav_order: 3
   energy (test: 22.99 meV/atom PBE, 25.18 meV/atom r2SCAN; val: 25.60 meV/atom PBE, 28.00 meV/atom r2SCAN),
   forces (test: 87.35 meV/Å PBE, 114.98 meV/Å r2SCAN; val: 111.00 meV/Å PBE, 141.18 meV/Å r2SCAN),
   and stresses (test: 0.4963 GPa PBE, 0.6441 GPa r2SCAN; val: 0.6060 GPa PBE, 0.7187 GPa r2SCAN).
+- **Fix: M3GNet three-body messages were routed to the wrong bonds whenever `threebody_cutoff < cutoff`.**
+  `create_line_graph` / `create_line_graph_torch` enumerated triplets on the bond list pruned to
+  `threebody_cutoff`, but `ThreeBodyInteractions` used those indices directly against parent-graph tensors, so
+  each triplet took atom `k` and the cutoff weights `f_c(r_ij) f_c(r_ik)` from the wrong bonds and was scattered
+  onto the wrong bond. This affected every MatGL release since v0.1.0 (DGL and PyG backends, and the LAMMPS export) with the
+  default 5 Å / 4 Å cutoffs; models with `threebody_cutoff == cutoff` were unaffected. The line graph now indexes
+  parent-graph bonds (as `original_index` / `ij_reverse_map` do in the reference TensorFlow M3GNet),
+  `n_triple_ij` has one entry per parent bond, and the three-body update scatters on `line_edge_index[0]`.
+  Cached line graphs now compare their retained parent-bond IDs with the current cutoff membership and request a
+  rebuild if a bond crosses `threebody_cutoff`, while refreshed geometry remains connected to autograd. Regression
+  tests reproduce `m3gnet-lite`'s global-bond enumeration and cover non-contiguous pruning, equal cutoffs,
+  NumPy/Torch builder parity, finite-difference coordinate gradients, isolated atoms, and dimers.
+  Pretrained M3GNet PES weights were fit with the mis-routed channel, which training suppressed to ~1e-4 of the
+  bond features; their predictions change by < 0.3 meV/atom and < 2.1 meV/Å (RMS), but they need retraining to
+  benefit from three-body information. `get_segment_indices_from_n` also merged segments when a count was zero
+  (`[2, 0, 3]` gave `[0, 0, 1, 1, 1]`); it now returns `[0, 0, 2, 2, 2]`.
 - **Fix: CHGNet three-body geometry autograd detachment (#834).** Continuous line-graph geometry features
   (`lg_bond_vec` and `lg_bond_dist`) were previously sliced under `torch.no_grad()`, causing three-body angular
   contributions to forces and stresses to be detached from autograd. Discrete graph topology is now isolated

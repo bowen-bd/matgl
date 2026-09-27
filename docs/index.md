@@ -273,6 +273,56 @@ Note: For stresses, we use the convention that compressive stress gives negative
 
 `matgl.utils.training.MGLPotentialTrainer` is a high-level wrapper around `PotentialLightningModule` and `pl.Trainer` with sensible MatPES-tuned defaults (Huber loss, stress weight 0.1, Adam + CosineAnnealingLR). Dataset construction is delegated to a sibling `MGLDatasetLoader` factory; the trainer itself only consumes pre-built `MGLDataset`s.
 
+
+#### Disk-backed large-dataset training
+
+For a dataset that cannot fit in memory, stream each split into independent shards and use `MGLDataModule` directly
+with Lightning. Records contain a pymatgen structure (or its Monty-serializable dictionary) and a `labels` mapping.
+All records in one split must use the same label keys.
+
+```python
+import lightning as L
+
+from matgl.graph.data import MGLDataModule, write_mgl_shards
+from matgl.ext.pymatgen import Structure2Graph
+from matgl.utils.training import PotentialLightningModule
+
+converter = Structure2Graph(element_types=("Li", "F"), cutoff=5.0)
+
+# records can be a generator, so the complete source dataset is never retained
+# in memory. Write dataset/valid and dataset/test in the same way.
+write_mgl_shards(
+    records,
+    "dataset/train",
+    converter=converter,
+    shard_size=1000,
+)
+
+data = MGLDataModule("dataset", batch_size=32, num_workers=4, seed=42)
+module = PotentialLightningModule(model=model)
+L.Trainer(accelerator="gpu", devices=1).fit(module, datamodule=data)
+```
+
+The manifest is committed only after every shard is complete. Each loader worker caches one shard, and training
+batches never cross shard boundaries, avoiding repeated deserialization during random sampling. Under distributed
+training, create at least as many shards as ranks; shards are assigned disjointly and ranks receive equal numbers
+of optimizer steps. Precomputed shards use pickle-backed PyTorch loading and should therefore be opened only from
+trusted sources. Set `precomputed=False` when writing to store serialized structures instead and provide the
+converter to `MGLDataModule` for on-the-fly graph construction.
+
+#### CLI training and evaluation
+
+The CLI accepts MatPES-shaped JSON/JSONL and ASE Extended XYZ files. To train TensorNet from scratch and evaluate the saved potential:
+
+```bash
+mgl train -i training.extxyz -m TensorNet -o TensorNet-local --epochs 100
+mgl evaluate -i test.extxyz -m TensorNet-local
+```
+
+For Extended XYZ, the default fields are `energy`, `forces`, `stress`, `charges`, and `magmoms`; override them with `--energy-key`, `--forces-key`, and the corresponding key options. Energies and forces are expected in eV and eV/Å. Stress defaults to ASE's eV/Å³ convention and is converted to matgl's GPa convention. Periodic frames use `Structure2Graph`, while fully nonperiodic frames use `Molecule2Graph`; one file cannot mix the two. Use `--model-kwargs '{"units": 128, "nblocks": 3}'` for architecture options, or pass a saved potential instead of `TensorNet` to fine-tune it.
+
+The geometry commands also accept multi-frame `.xyz` and `.extxyz` files. `mgl predict` reports one result per frame; `mgl relax -s _relaxed` writes all relaxed frames back to Extended XYZ; and `mgl md` starts one simulation per frame, using `_0`, `_1`, and so on in trajectory/log names. Nonperiodic molecular relaxation requires `--no-relax-cell`.
+
 #### Train a TensorNet on MatPES
 
 ```python
