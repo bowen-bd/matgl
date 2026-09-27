@@ -30,11 +30,11 @@ nav_order: 3
   parser construction no longer queries the model registry, and MD boolean/mask arguments use unambiguous parsers.
 - **New: Release of compact ~1M parameter CHGNet MatPES models.** Released lightweight (1,083,842 parameter)
   CHGNet foundation potentials for both PBE (`BowenD-UCB/CHGNet-PES-MatPES-PBE-1M-2026.9`) and r2SCAN
-  (`BowenD-UCB/CHGNet-PES-MatPES-r2SCAN-1M-2026.9`) trained on the official MatPES dataset (`2024.11` / `2025.2`). Despite having
+  (`BowenD-UCB/CHGNet-PES-MatPES-r2SCAN-1M-2026.9`) trained on the official MatPES 2025.2 dataset. Despite having
   ~2.5× fewer parameters than the standard 2.7M architecture, these compact models achieve strong validation and test MAE across
-  energy (test: 22.99 meV/atom PBE, 25.18 meV/atom r2SCAN; val: 25.60 meV/atom PBE, 28.00 meV/atom r2SCAN),
-  forces (test: 87.35 meV/Å PBE, 114.98 meV/Å r2SCAN; val: 111.00 meV/Å PBE, 141.18 meV/Å r2SCAN),
-  and stresses (test: 0.4963 GPa PBE, 0.6441 GPa r2SCAN; val: 0.6060 GPa PBE, 0.7187 GPa r2SCAN).
+  energy (test: 26.72 meV/atom PBE, 27.45 meV/atom r2SCAN; val: 25.60 meV/atom PBE, 28.00 meV/atom r2SCAN),
+  forces (test: 110.53 meV/Å PBE, 137.58 meV/Å r2SCAN; val: 111.00 meV/Å PBE, 141.18 meV/Å r2SCAN),
+  and stresses (test: 0.6010 GPa PBE, 0.7094 GPa r2SCAN; val: 0.6060 GPa PBE, 0.7187 GPa r2SCAN).
 - **Fix: M3GNet three-body messages were routed to the wrong bonds whenever `threebody_cutoff < cutoff`.**
   `create_line_graph` / `create_line_graph_torch` enumerated triplets on the bond list pruned to
   `threebody_cutoff`, but `ThreeBodyInteractions` used those indices directly against parent-graph tensors, so
